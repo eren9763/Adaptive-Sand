@@ -1,0 +1,31 @@
+dataset: mnist
+model: hybrid
+epochs: 150
+batch_size: 32
+val_ratio: 0.125
+data_dir: null
+seed: 42
+initial_k: null
+output_dir: outputs
+skip_plots: false
+
+model_params:
+  hidden_layers: [67]
+  learning_rate: 0.0001
+  decay_steps: 250
+  decay_rate: 1.0
+  alpha: 0.0
+  batch_norm: false
+  original_sand_k: 60
+  seqatt_k: 60
+  lasso_k: 60
+
+pruning:
+  start_epoch: 5
+  interval: 4
+  tolerance: 0.005
+  lambda_k: 0.15
+  hybrid_alpha: 0.7
+  min_val_accuracy: 0.95
+  cooldown: 3
+  max_rejections: 3

@@ -1,0 +1,10 @@
+# Tested-compatible stack for Python 3.10 on Windows/Linux.
+# TensorFlow/SciPy/Pandas wheels compiled against NumPy 1.x are not compatible
+# with NumPy 2.x, so NumPy is pinned below 2.
+numpy==1.23.5
+pandas==1.5.3
+scipy==1.10.1
+scikit-learn==1.2.2
+matplotlib==3.7.3
+tensorflow==2.10.1
+PyYAML==6.0.1
