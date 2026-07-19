@@ -1,148 +1,113 @@
-# coding=utf-8
-# Copyright 2024 The XXXX-1 Research Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Set up datasets for feature selection experiments."""
-
 import numpy as np
-from sand.experiments.datasets import data_loader
 import tensorflow as tf
 
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
-def get_dataset(data_name, val_ratio, batch_size):
-  """Get datasets split into training, validation, and test datasets."""
-  # Load data.
-  if data_name == "mice":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_mice()
-    )
+from sand.experiments.datasets import data_loader
 
-  elif data_name == "isolet":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_isolet()
-    )
 
-  elif data_name == "activity":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_activity()
-    )
+def get_dataset(dataname, valratio=0.125, batchsize=32, seed=42):
+    if dataname == "mice":
+        xtrain, xtest, ytrain, ytest, isclassification, numclasses = \
+            data_loader.load_mice(seed=seed)
 
-  elif data_name == "coil":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_coil()
-    )
+    elif dataname == "isolet":
+        xtrain, xtest, ytrain, ytest, isclassification, numclasses = \
+            data_loader.load_isolet()
 
-  elif data_name == "fashion":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_fashion()
-    )
+    elif dataname == "activity":
+        xtrain, xtest, ytrain, ytest, isclassification, numclasses = \
+            data_loader.load_activity()
 
-  elif data_name == "mnist":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_mnist()
-    )
+    elif dataname == "coil":
+        xtrain, xtest, ytrain, ytest, isclassification, numclasses = \
+            data_loader.load_coil(seed=seed)
 
-  elif data_name == "california_housing":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_housing()
-    )
+    elif dataname == "fashion":
+        xtrain, xtest, ytrain, ytest, isclassification, numclasses = \
+            data_loader.load_fashion()
 
-  elif data_name == "madelon":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_madelon()
-    )
-
-  elif data_name == "har70":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_har70()
-    )
-
-  elif data_name == "multispectral":
-    (x_train, x_test, y_train, y_test, is_classification, num_classes) = (
-        data_loader.load_multispectral()
-    )
+    elif dataname == "mnist":
+        xtrain, ytrain, xtest, ytest = data_loader.load_mnist()
     
-  else:
-    raise NotImplementedError
+        isclassification = True
+        numclasses = 10
 
-  # Tensorflow data transform functions
-  if is_classification:
+    elif dataname == "arcene":
+        xtrain, xtest, ytrain, ytest, isclassification, numclasses = \
+            data_loader.load_arcene()
 
-    def transform(x, y):
-      x = tf.cast(x, dtype=tf.float32)
-      return x, tf.one_hot(y, num_classes)
+    else:
+        raise NotImplementedError(f"Unsupported dataset: {dataname}")
 
-  else:
+    xtrain = np.asarray(xtrain, dtype=np.float32)
+    xtest = np.asarray(xtest, dtype=np.float32)
+    ytrain = np.asarray(ytrain).reshape(-1)
+    ytest = np.asarray(ytest).reshape(-1)
 
-    def transform(x, y):
-      x = tf.cast(x, dtype=tf.float32)
-      y = tf.cast(y, dtype=tf.float32)
-      return x, y
+    stratify_labels = ytrain if isclassification else None
 
-  # standardize data
-  std = np.std(x_train, axis = 0)
-  
-  std[std == 0] = 1
-  mean = np.mean(x_train, axis = 0)
-
-  x_train = (x_train-mean) / std
-  x_test = (x_test-mean) / std
-
-
-  # Shuffle training data
-  idx = np.random.permutation(x_train.index)
-  val_size = int(np.size(idx) * val_ratio)
-  x_val = x_train.reindex(idx[-val_size:])
-  y_val = y_train.reindex(idx[-val_size:])
-  x_train = x_train.reindex(idx[:-val_size])
-  y_train = y_train.reindex(idx[:-val_size])
-
-  # Construct tf dataset
-  with tf.device("CPU"):
-    assert batch_size <= x_train.shape[0], (
-        f"Batch size {batch_size} is larger than training data size"
-        f" {x_train.shape[0]}."
+    xtr, xval, ytr, yval = train_test_split(
+        xtrain,
+        ytrain,
+        test_size=valratio,
+        random_state=seed,
+        shuffle=True,
+        stratify=stratify_labels
     )
-    ds_train = tf.data.Dataset.from_tensor_slices(
-        (x_train.values, y_train.T.values)
-    )
-    ds_train = ds_train.map(transform).shuffle(
-        100, reshuffle_each_iteration=True
-    )
-    ds_train = ds_train.batch(batch_size, drop_remainder=True)
 
-    ds_val = tf.data.Dataset.from_tensor_slices((x_val.values, y_val.T.values))
-    ds_val = ds_val.map(transform)
-    ds_val = ds_val.batch(batch_size, drop_remainder=False)
+    scaler = StandardScaler()
+    xtr = scaler.fit_transform(xtr).astype(np.float32)
+    xval = scaler.transform(xval).astype(np.float32)
+    xtest = scaler.transform(xtest).astype(np.float32)
 
-    ds_test = tf.data.Dataset.from_tensor_slices(
-        (x_test.values, y_test.T.values)
+    if isclassification:
+        def transform(x, y):
+            x = tf.cast(x, tf.float32)
+            y = tf.one_hot(tf.cast(y, tf.int32), depth=numclasses)
+            return x, y
+    else:
+        def transform(x, y):
+            return tf.cast(x, tf.float32), tf.cast(y, tf.float32)
+
+    dstrain = tf.data.Dataset.from_tensor_slices((xtr, ytr))
+    dstrain = (
+        dstrain
+        .shuffle(buffer_size=len(xtr), seed=seed, reshuffle_each_iteration=True)
+        .map(transform, num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(batchsize, drop_remainder=False)
+        .prefetch(tf.data.AUTOTUNE)
     )
-    ds_test = ds_test.map(transform)
-    ds_test = ds_test.batch(batch_size, drop_remainder=False)
 
-  return {
-      "x_train": x_train,
-      "y_train": y_train,
-      "x_val": x_val,
-      "y_val": y_val,
-      "x_test": x_test,
-      "y_test": y_test,
-      "ds_train": ds_train,
-      "ds_val": ds_val,
-      "ds_test": ds_test,
-      "num_features": len(x_train.columns),
-      "is_classification": is_classification,
-      "num_classes": num_classes,
-  }
+    dsval = tf.data.Dataset.from_tensor_slices((xval, yval))
+    dsval = (
+        dsval
+        .map(transform, num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(batchsize, drop_remainder=False)
+        .prefetch(tf.data.AUTOTUNE)
+    )
+
+    dstest = tf.data.Dataset.from_tensor_slices((xtest, ytest))
+    dstest = (
+        dstest
+        .map(transform, num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(batchsize, drop_remainder=False)
+        .prefetch(tf.data.AUTOTUNE)
+    )
+
+    return {
+        "xtrain": xtr,
+        "ytrain": ytr,
+        "xval": xval,
+        "yval": yval,
+        "xtest": xtest,
+        "ytest": ytest,
+        "dstrain": dstrain,
+        "dsval": dsval,
+        "dstest": dstest,
+        "numfeatures": xtr.shape[1],
+        "isclassification": isclassification,
+        "numclasses": numclasses,
+        "scaler": scaler,
+    }

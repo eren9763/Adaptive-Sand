@@ -20,376 +20,294 @@ import os
 import numpy as np
 import pandas as pd
 from PIL import Image
-from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 from sklearn.datasets import fetch_california_housing
 from sklearn.model_selection import train_test_split
 import urllib.request as urllib2 
-
+from pathlib import Path
 
 DATA_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def load_mice():
-  """Loads the Mice dataset, adapted from: https://github.com/lasso-net/lassonet/blob/master/experiments/data_utils.py."""
+def load_mice(seed=42):
+    """
+    Load the Mice Protein Expression dataset.
 
-  filling_value = -100000
-  cache_filepath = os.path.join(DATA_DIR, "mice/Data_Cortex_Nuclear.csv")
+    This loader performs no feature scaling. Scaling is performed later,
+    after the train/validation split, using training data only.
+    """
+    fillingvalue = -100000
+    cachefilepath = os.path.join(DATA_DIR, "mice", "Data_Cortex_Nuclear.csv")
 
-  with open(cache_filepath, "r") as fp:
-    x = np.genfromtxt(
-        fp.readlines(),
-        delimiter=",",
-        skip_header=1,
-        usecols=range(1, 78),
-        filling_values=filling_value,
-        encoding="UTF-8",
-    )
-  with open(cache_filepath, "r") as fp:
-    classes = np.genfromtxt(
-        fp.readlines(),
-        delimiter=",",
-        skip_header=1,
-        usecols=range(78, 81),
-        dtype=None,
-        encoding="UTF-8",
-    )
-
-  for i, row in enumerate(x):
-    for j, val in enumerate(row):
-      if val == filling_value:
-        x[i, j] = np.mean(
-            [
-                x[k, j]
-                for k in range(classes.shape[0])
-                if np.all(classes[i] == classes[k])
-            ]
+    with open(cachefilepath, "r", encoding="UTF-8") as fp:
+        x = np.genfromtxt(
+            fp.readlines(),
+            delimiter=",",
+            skip_header=1,
+            usecols=range(1, 78),
+            filling_values=fillingvalue,
+            encoding="UTF-8"
         )
 
-  y = np.zeros((classes.shape[0]), dtype=np.uint8)
-  for i, row in enumerate(classes):
-    for j, (val, label) in enumerate(zip(row, ["Control", "Memantine", "C/S"])):
-      y[i] += (2**j) * (val == label)
+    with open(cachefilepath, "r", encoding="UTF-8") as fp:
+        classes = np.genfromtxt(
+            fp.readlines(),
+            delimiter=",",
+            skip_header=1,
+            usecols=range(78, 81),
+            dtype=None,
+            encoding="UTF-8"
+        )
 
-  x = MinMaxScaler(feature_range=(0, 1)).fit_transform(x)
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            if x[i, j] == fillingvalue:
+                same_class_rows = [
+                    k for k in range(classes.shape[0])
+                    if np.all(classes[i] == classes[k])
+                ]
 
-  indices = np.arange(x.shape[0])
-  np.random.shuffle(indices)
-  x = x[indices]
-  y = y[indices]
-  classes = classes[indices]
+                valid_values = x[same_class_rows, j]
+                valid_values = valid_values[valid_values != fillingvalue]
 
-  print("Data loaded...")
-  print("Data shapes:")
-  print("x shape: {}, y shape: {}".format(x.shape, y.shape))
+                if valid_values.size > 0:
+                    x[i, j] = np.mean(valid_values)
+                else:
+                    x[i, j] = 0.0
 
-  is_classification = True
-  num_classes = 8
+    y = np.zeros(classes.shape[0], dtype=np.uint8)
 
-  x_train = pd.DataFrame(x[: x.shape[0] * 4 // 5])
-  x_test = pd.DataFrame(x[x.shape[0] * 4 // 5 :])
-  y_train = pd.DataFrame(y[: x.shape[0] * 4 // 5], dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(y[x.shape[0] * 4 // 5 :], dtype=np.int32).iloc[:, 0]
+    for i, row in enumerate(classes):
+        for j, (val, label) in enumerate(zip(row, ["Control", "Memantine", "CS"])):
+            if val == label:
+                y[i] += 2 ** j
 
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
+    x = x.astype(np.float32)
 
+    rng = np.random.RandomState(seed)
+    indices = np.arange(x.shape[0])
+    rng.shuffle(indices)
+
+    x = x[indices]
+    y = y[indices]
+
+    split_index = x.shape[0] * 4 // 5
+
+    xtrain = pd.DataFrame(x[:split_index])
+    xtest = pd.DataFrame(x[split_index:])
+
+    ytrain = pd.DataFrame(
+        y[:split_index],
+        dtype=np.int32
+    ).iloc[:, 0]
+
+    ytest = pd.DataFrame(
+        y[split_index:],
+        dtype=np.int32
+    ).iloc[:, 0]
+
+    isclassification = True
+    numclasses = 8
+
+    print("Data loaded...")
+    print("xtrain shape:", xtrain.shape, "ytrain shape:", ytrain.shape)
+    print("xtest shape:", xtest.shape, "ytest shape:", ytest.shape)
+
+    return xtrain, xtest, ytrain, ytest, isclassification, numclasses
 
 def load_isolet():
-  """Loads the Isolet dataset, adapted from: https://github.com/lasso-net/lassonet/blob/master/experiments/data_utils.py."""
+    """
+    Load ISOLET without fitting a scaler on train+test jointly.
 
-  cache_filepath_train = os.path.join(DATA_DIR, "isolet/isolet1+2+3+4.data")
-  cache_filepath_test = os.path.join(DATA_DIR, "isolet/isolet5.data")
-
-  # use gfile to read from cns, otherwise can just use np.genfromtxt
-  with open(cache_filepath_train, "r") as fp:
-    x_train = np.genfromtxt(
-        fp.readlines(), delimiter=",", usecols=range(0, 617), encoding="UTF-8"
-    )
-  with open(cache_filepath_train, "r") as fp:
-    y_train = np.genfromtxt(
-        fp.readlines(), delimiter=",", usecols=[617], encoding="UTF-8"
-    )
-  with open(cache_filepath_test, "r") as fp:
-    x_test = np.genfromtxt(
-        fp.readlines(), delimiter=",", usecols=range(0, 617), encoding="UTF-8"
-    )
-  with open(cache_filepath_test, "r") as fp:
-    y_test = np.genfromtxt(
-        fp.readlines(), delimiter=",", usecols=[617], encoding="UTF-8"
+    Z-score normalization is applied later in dataset.py using only
+    the final optimization-training subset.
+    """
+    cachefilepathtrain = os.path.join(
+        DATA_DIR,
+        "isolet",
+        "isolet1+2+3+4.data"
     )
 
-  x = MinMaxScaler(feature_range=(0, 1)).fit_transform(
-      np.concatenate((x_train, x_test))
-  )
-  x_train = x[: len(y_train)]
-  x_test = x[len(y_train) :]
+    cachefilepathtest = os.path.join(
+        DATA_DIR,
+        "isolet",
+        "isolet5.data"
+    )
 
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
+    with open(cachefilepathtrain, "r", encoding="UTF-8") as fp:
+        xtrain = np.genfromtxt(
+            fp.readlines(),
+            delimiter=",",
+            usecols=range(0, 617),
+            encoding="UTF-8"
+        )
 
-  is_classification = True
-  num_classes = 26
+    with open(cachefilepathtrain, "r", encoding="UTF-8") as fp:
+        ytrain = np.genfromtxt(
+            fp.readlines(),
+            delimiter=",",
+            usecols=617,
+            encoding="UTF-8"
+        )
 
-  x_train = pd.DataFrame(x_train)
-  x_test = pd.DataFrame(x_test)
-  y_train = pd.DataFrame(y_train - 1, dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(y_test - 1, dtype=np.int32).iloc[:, 0]
+    with open(cachefilepathtest, "r", encoding="UTF-8") as fp:
+        xtest = np.genfromtxt(
+            fp.readlines(),
+            delimiter=",",
+            usecols=range(0, 617),
+            encoding="UTF-8"
+        )
 
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
+    with open(cachefilepathtest, "r", encoding="UTF-8") as fp:
+        ytest = np.genfromtxt(
+            fp.readlines(),
+            delimiter=",",
+            usecols=617,
+            encoding="UTF-8"
+        )
 
+    xtrain = xtrain.astype(np.float32)
+    xtest = xtest.astype(np.float32)
 
-def load_activity():
-  """Loads the Activity dataset, adapted from: https://github.com/lasso-net/lassonet/blob/master/experiments/data_utils.py."""
+    ytrain = (ytrain.astype(np.int32) - 1)
+    ytest = (ytest.astype(np.int32) - 1)
 
-  cache_filepath_train_x = os.path.join(DATA_DIR, "activity/X_train.txt")
-  cache_filepath_train_y = os.path.join(DATA_DIR, "activity/y_train.txt")
-  cache_filepath_test_x = os.path.join(DATA_DIR, "activity/X_test.txt")
-  cache_filepath_test_y = os.path.join(DATA_DIR, "activity/y_test.txt")
-  with open(cache_filepath_train_x, "r") as fp:
-    x_train = np.genfromtxt(fp.readlines(), encoding="UTF-8")
-  with open(cache_filepath_test_x, "r") as fp:
-    x_test = np.genfromtxt(fp.readlines(), encoding="UTF-8")
-  with open(cache_filepath_train_y, "r") as fp:
-    y_train = np.genfromtxt(fp.readlines(), encoding="UTF-8")
-  with open(cache_filepath_test_y, "r") as fp:
-    y_test = np.genfromtxt(fp.readlines(), encoding="UTF-8")
+    isclassification = True
+    numclasses = 26
+
+    xtrain = pd.DataFrame(xtrain)
+    xtest = pd.DataFrame(xtest)
+    ytrain = pd.DataFrame(ytrain, dtype=np.int32).iloc[:, 0]
+    ytest = pd.DataFrame(ytest, dtype=np.int32).iloc[:, 0]
+
+    print("Data loaded...")
+    print("xtrain shape:", xtrain.shape, "ytrain shape:", ytrain.shape)
+    print("xtest shape:", xtest.shape, "ytest shape:", ytest.shape)
+
+    return xtrain, xtest, ytrain, ytest, isclassification, numclasses
   
-  X = MinMaxScaler(feature_range=(0,1)).fit_transform(np.concatenate((x_train, x_test)))
-  x_train = X[: len(y_train)]
-  x_test = X[len(y_train):]
+  
+def load_arcene():
 
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
-
-  is_classification = True
-  num_classes = 6
-
-  x_train = pd.DataFrame(x_train)
-  x_test = pd.DataFrame(x_test)
-  y_train = pd.DataFrame(y_train - 1, dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(y_test - 1, dtype=np.int32).iloc[:, 0]
-
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
-
-
-def load_coil():
-  """Loads the Coil dataset, adapted from: https://github.com/lasso-net/lassonet/blob/master/experiments/data_utils.py."""
-
-  samples = []
-  for i in range(1, 21):  # classes
-    for image_index in range(72):  # examples
-      image_filename = "obj%d__%d.png" % (i, image_index)
-      image_filename = os.path.join(
-          DATA_DIR, f"coil/coil-20-proc/{image_filename}"
-      )
-      with Image.open(image_filename) as obj_img:
-        rescaled = obj_img.resize((20, 20))
-        pixels_values = [float(x) for x in list(rescaled.getdata())]
-      sample = np.array(pixels_values + [i])
-      samples.append(sample)
-  samples = np.array(samples)
-  np.random.shuffle(samples)
-  data = samples[:, :-1]
-  targets = (samples[:, -1] + 0.5).astype(np.int64)
-  data = (data - data.min()) / (data.max() - data.min())
-
-  l = data.shape[0] * 4 // 5
-  x_train = data[:l]
-  y_train = targets[:l] - 1
-  x_test = data[l:]
-  y_test = targets[l:] - 1
-
-  is_classification = True
-  num_classes = 20
-
-  x_train = pd.DataFrame(x_train)
-  x_test = pd.DataFrame(x_test)
-  y_train = pd.DataFrame(y_train, dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(y_test, dtype=np.int32).iloc[:, 0]
-
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
-
-
-def load_data(fashion=False, digit=None, normalize=False):
-  """Loads the data for image datasets."""
-
-  if fashion:
-    (x_train, y_train), (x_test, y_test) = (
-        tf.keras.datasets.fashion_mnist.load_data()
+    x_train = pd.read_csv(
+        os.path.join(DATA_DIR, "arcene", "arcene_train.data"),
+        sep=r"\s+",
+        header=None,
     )
-  else:
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
 
-  if digit is not None and 0 <= digit and digit <= 9:
-    train = test = {y: [] for y in range(10)}
-    for x, y in zip(x_train, y_train):
-      train[y].append(x)
-    for x, y in zip(x_test, y_test):
-      test[y].append(x)
+    x_test = pd.read_csv(
+        os.path.join(DATA_DIR, "arcene", "arcene_valid.data"),
+        sep=r"\s+",
+        header=None,
+    )
 
-    for y in range(10):
-      train[y] = np.asarray(train[y])
-      test[y] = np.asarray(test[y])
+    y_train = pd.read_csv(
+        os.path.join(DATA_DIR, "arcene", "arcene_train.labels"),
+        header=None,
+    ).iloc[:, 0]
 
-    x_train = train[digit]
-    x_test = test[digit]
+    y_test = pd.read_csv(
+        os.path.join(DATA_DIR, "arcene", "arcene_valid.labels"),
+        header=None,
+    ).iloc[:, 0]
 
-  x_train = x_train.reshape((-1, x_train.shape[1] * x_train.shape[2])).astype(
-      np.float32
-  )
-  x_test = x_test.reshape((-1, x_test.shape[1] * x_test.shape[2])).astype(
-      np.float32
-  )
+    y_train = (y_train == 1).astype(np.int32)
+    y_test = (y_test == 1).astype(np.int32)
 
-  if normalize:
-    x = np.concatenate((x_train, x_test))
-    x = (x - x.min()) / (x.max() - x.min())
-    x_train = x[: len(y_train)]
-    x_test = x[len(y_train) :]
-
-  return (x_train, y_train), (x_test, y_test)
+    return x_train, x_test, y_train, y_test, True, 2
 
 
-def load_mnist():
-  """Loads the MNIST dataset, adapted from: https://github.com/lasso-net/lassonet/blob/master/experiments/data_utils.py."""
+def load_coil(seed=42):
+    """
+    Load COIL-20 without global normalization over train and test samples.
 
-  train, test = load_data(fashion=False, normalize=True)
+    Feature scaling is performed only after train/validation splitting.
+    """
+    samples = []
 
-  is_classification = True
-  num_classes = 10
+    for class_id in range(1, 21):
+        for image_index in range(72):
+            imagefilename = f"obj{class_id}__{image_index}.png"
+            imagefilepath = os.path.join(
+                DATA_DIR,
+                "coil",
+                "coil-20-proc",
+                imagefilename
+            )
 
-  x_train = pd.DataFrame(train[0])
-  x_test = pd.DataFrame(test[0])
-  y_train = pd.DataFrame(train[1], dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(test[1], dtype=np.int32).iloc[:, 0]
+            with Image.open(imagefilepath) as objimg:
+                resized = objimg.resize((20, 20))
+                pixelvalues = [float(value) for value in list(resized.getdata())]
 
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
+            sample = np.asarray(pixelvalues, dtype=np.float32)
+            sample = np.append(sample, class_id)
+            samples.append(sample)
 
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
+    samples = np.asarray(samples, dtype=np.float32)
+
+    rng = np.random.RandomState(seed)
+    rng.shuffle(samples)
+
+    data = samples[:, :-1].astype(np.float32)
+    targets = (samples[:, -1] - 1).astype(np.int64)
+
+    split_index = data.shape[0] * 4 // 5
+
+    xtrain = pd.DataFrame(data[:split_index])
+    xtest = pd.DataFrame(data[split_index:])
+
+    ytrain = pd.DataFrame(
+        targets[:split_index],
+        dtype=np.int32
+    ).iloc[:, 0]
+
+    ytest = pd.DataFrame(
+        targets[split_index:],
+        dtype=np.int32
+    ).iloc[:, 0]
+
+    isclassification = True
+    numclasses = 20
+
+    print("Data loaded...")
+    print("xtrain shape:", xtrain.shape, "ytrain shape:", ytrain.shape)
+    print("xtest shape:", xtest.shape, "ytest shape:", ytest.shape)
+
+    return xtrain, xtest, ytrain, ytest, isclassification, numclasses
 
 
-def load_fashion():
-  """Loads the Fashion dataset, adapted from: https://github.com/lasso-net/lassonet/blob/master/experiments/data_utils.py."""
 
-  train, test = load_data(fashion=True, normalize=True)
+def load_mnist(fashion=False, digit=None, normalize=False):
+    """
+    Load MNIST/Fashion-MNIST.
 
-  is_classification = True
-  num_classes = 10
+    `normalize` is kept only for backward compatibility and is ignored.
+    All scaling is deferred to dataset.py and fitted on training data only.
+    """
+    if fashion:
+        (xtrain, ytrain), (xtest, ytest) = tf.keras.datasets.fashion_mnist.load_data()
+    else:
+        (xtrain, ytrain), (xtest, ytest) = tf.keras.datasets.mnist.load_data()
 
-  x_train = pd.DataFrame(train[0])
-  x_test = pd.DataFrame(test[0])
-  y_train = pd.DataFrame(train[1], dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(test[1], dtype=np.int32).iloc[:, 0]
+    if digit is not None and 0 <= digit <= 9:
+        trainmask = (ytrain == digit)
+        testmask = (ytest == digit)
 
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
+        xtrain = xtrain[trainmask]
+        ytrain = ytrain[trainmask]
 
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
+        xtest = xtest[testmask]
+        ytest = ytest[testmask]
 
-def load_housing():
-  """Loads the california housing dataset"""
+    xtrain = xtrain.reshape(
+        -1,
+        xtrain.shape[1] * xtrain.shape[2]
+    ).astype(np.float32)
 
-  is_classification = False
-  num_classes = 0
+    xtest = xtest.reshape(
+        -1,
+        xtest.shape[1] * xtest.shape[2]
+    ).astype(np.float32)
 
-  (X,y) = fetch_california_housing(return_X_y=True)
+    return xtrain, ytrain, xtest, ytest
 
-  x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-  x_train = pd.DataFrame(x_train)
-  x_test = pd.DataFrame(x_test)
-  y_train = pd.DataFrame(y_train, dtype=np.float32).iloc[:, 0]
-  y_test = pd.DataFrame(y_test, dtype=np.float32).iloc[:, 0]
-
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
-
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
-
-def load_madelon():
-  """Loads the Madelon dataset, adapted from: https://github.com/GhadaSokar/WAST"""
-
-  train_data_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/madelon/MADELON/madelon_train.data'
-  train_resp_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/madelon/MADELON/madelon_train.labels'
-  val_data_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/madelon/MADELON/madelon_valid.data'
-  val_resp_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/madelon/madelon_valid.labels'
-
-  x_train = np.loadtxt(urllib2.urlopen(train_data_url)).astype('float32')
-  y_train = np.loadtxt(urllib2.urlopen(train_resp_url))
-  x_test =  np.loadtxt(urllib2.urlopen(val_data_url)).astype('float32')
-  y_test =  np.loadtxt(urllib2.urlopen(val_resp_url))  
-
-  y_train = np.maximum(y_train, 0)
-  y_test = np.maximum(y_test, 0)
-
-  x_train = pd.DataFrame(x_train)
-  x_test = pd.DataFrame(x_test)
-  y_train = pd.DataFrame(y_train, dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(y_test, dtype=np.int32).iloc[:, 0]
-
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
-
-  is_classification = True
-  num_classes = 2
-
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
-
-def load_har70():
-  """Loads the HAR70+ dataset"""
-
-  x_train = np.load(os.path.join(DATA_DIR, 'har70/x_train.npy'))
-  y_train = np.load(os.path.join(DATA_DIR, 'har70/y_train.npy'))
-  x_test = np.load(os.path.join(DATA_DIR, 'har70/x_test.npy'))
-  y_test = np.load(os.path.join(DATA_DIR, 'har70/y_test.npy'))
-
-  x_train = pd.DataFrame(x_train)
-  x_test = pd.DataFrame(x_test)
-  y_train = pd.DataFrame(y_train, dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(y_test, dtype=np.int32).iloc[:, 0]
-
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
-
-  is_classification = True
-  num_classes = 8
-
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
-
-def load_multispectral():
-  """Loads the Multispectral dataset"""
-
-  X = np.load(os.path.join(DATA_DIR, 'multispectral/concatenated.npy'))
-  y = np.load(os.path.join(DATA_DIR, 'multispectral/labels.npy'))
-
-  x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-  x_train = pd.DataFrame(x_train)
-  x_test = pd.DataFrame(x_test)
-  y_train = pd.DataFrame(y_train, dtype=np.int32).iloc[:, 0]
-  y_test = pd.DataFrame(y_test, dtype=np.int32).iloc[:, 0]
-
-  print("Data loaded...")
-  print("Data shapes:")
-  print(x_train.shape, y_train.shape)
-  print(x_test.shape, y_test.shape)
-
-  is_classification = True
-  num_classes = 4
-
-  return (x_train, x_test, y_train, y_test, is_classification, num_classes)
