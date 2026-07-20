@@ -309,20 +309,6 @@ versions, CUDA versions, and GPU models.
 - `results/` contains experiment outputs and is intentionally retained.
 - A GPU is recommended, especially for A-SAND-Hybrid and sensitivity sweeps.
 
-## Citation
-
-If you use this repository, please cite the accompanying manuscript when it is
-available.
-
-```bibtex
-@software{koybasi2026adaptivesand,
-  author  = {Eren Köybaşı},
-  title   = {Adaptive-SAND: Adaptive Neural Feature Selection},
-  year    = {2026},
-  url     = {https://github.com/eren9763/Adaptive-Sand}
-}
-```
-
 ## License
 
 A license has not yet been specified. Add a `LICENSE` file before reusing or
