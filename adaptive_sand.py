@@ -31,9 +31,9 @@ def set_seeds(seed=42):
         tf.config.experimental.enable_op_determinism()
 
 set_seeds(42)
-# ==========================================
-# ADAPTIVE SAND LAYER (FIXED)
-# ==========================================
+
+# ADAPTIVE SAND LAYER 
+
 class SAND_Layer_Universal(tf.keras.layers.Layer):
     def __init__(self, num_inputs, initial_k=None, seed=42):
         super().__init__()
@@ -136,9 +136,9 @@ class SAND_Layer_Universal(tf.keras.layers.Layer):
             "mask": self.mask.numpy()
         }
 
-# ==========================================
-# ADAPTIVE MODEL (FIXED)
-# ==========================================
+
+# ADAPTIVE MODEL 
+
 class SANDAdaptiveModel(tf.keras.Model):
     def __init__(
         self,
@@ -158,7 +158,7 @@ class SANDAdaptiveModel(tf.keras.Model):
         if batch_norm:
             self.bn = tf.keras.layers.BatchNormalization()
 
-        # 🔥 FIX: SAME ACTIVATION AS PAPER
+ 
         self.hidden = [
     tf.keras.layers.Dense(
         d,
@@ -183,7 +183,6 @@ class SANDAdaptiveModel(tf.keras.Model):
         bias_initializer="zeros"
             )
 
-        # 🔥 FIX: SAME LR SCHEDULE
         lr = tf.keras.optimizers.schedules.ExponentialDecay(
             0.0001,
             decay_steps=250,
